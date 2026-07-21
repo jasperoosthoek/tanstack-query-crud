@@ -15,7 +15,8 @@
     "scripts": {
         "build": "rm -rf dist && tsc -p tsconfig.build.json",
         "test": "jest",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "prepublishOnly": "npm test && npm run build"
     },
     "peerDependencies": {
         "react": "^18.0.0 || ^19.0.0",
@@ -40,5 +41,16 @@
         "typescript": "^5.3.0",
         "webpack": "^5.89.0",
         "webpack-cli": "^5.1.0"
+    },
+    "keywords": ["tanstack", "react-query", "crud", "typescript", "hooks", "react"],
+    "homepage": "https://github.com/jasperoosthoek/tanstack-query-crud#readme",
+    "bugs": {
+        "url": "https://github.com/jasperoosthoek/tanstack-query-crud/issues"
+    },
+    "engines": {
+        "node": ">=18"
+    },
+    "publishConfig": {
+        "access": "public"
     }
 }

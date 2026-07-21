@@ -283,6 +283,69 @@ describe('useDelete', () => {
   });
 });
 
+// Detail URLs must respect the resource's trailing-slash convention.
+// DRF-style routes like '/tasks/' need '/tasks/42/' (id before slash),
+// not the naive '/tasks//42' (double slash from `${route}/${id}`).
+
+describe('detail URL trailing-slash convention', () => {
+  it('useGet appends /{id}/ when route ends with /', async () => {
+    const item: Task = { id: 42, title: 'X', done: true };
+    const axios = makeMockAxios(() => item);
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks/', axios,
+      actions: { get: true },
+    });
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => tasks.useGet(42), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(axios).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'get', url: '/tasks/42/' })
+    );
+  });
+
+  it('useUpdate targets /{id}/ when route ends with /', async () => {
+    const updated: Task = { id: 42, title: 'Updated', done: true };
+    const axios = makeMockAxios(() => updated);
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks/', axios,
+      actions: { update: true },
+    });
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => tasks.useUpdate(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ id: 42, title: 'Updated' });
+    });
+
+    expect(axios).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'patch', url: '/tasks/42/' })
+    );
+  });
+
+  it('useDelete targets /{id}/ when route ends with /', async () => {
+    const axios = makeMockAxios(() => undefined);
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks/', axios,
+      actions: { delete: true },
+    });
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => tasks.useDelete(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ id: 42 });
+    });
+
+    expect(axios).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'delete', url: '/tasks/42/' })
+    );
+  });
+});
+
 // -- caller vs axios ------------------------------------------------
 
 describe('caller alternative', () => {

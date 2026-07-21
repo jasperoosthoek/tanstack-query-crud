@@ -1,4 +1,4 @@
-# @jasperoosthoek/tanstack-crud
+# @jasperoosthoek/tanstack-query-crud
 
 Declarative CRUD hooks built on top of [TanStack Query](https://tanstack.com/query). Configure your endpoints once, get typed hooks with automatic caching and invalidation.
 
@@ -25,7 +25,7 @@ function App() {
 ```ts
 // resources/tasks.ts
 import axios from 'axios';
-import { createResource } from '@jasperoosthoek/tanstack-crud';
+import { createResource } from '@jasperoosthoek/tanstack-query-crud';
 
 type Task = { id: number; title: string; done: boolean };
 

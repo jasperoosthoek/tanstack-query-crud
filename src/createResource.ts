@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   useQuery,
   useMutation,
@@ -11,6 +11,9 @@ import {
 } from '@tanstack/react-query';
 import { createAxiosCaller } from './adapters/axios';
 import {
+  invalidate,
+  invalidateDetail,
+  invalidateList,
   removeDetailCache,
   setDetailCache,
   updateAllLists,
@@ -163,7 +166,14 @@ type SSREnabled<C> = C extends { ssr: true } ? true : false;
 
 export type Resource<T, C extends ResourceConfig<T>> = {
   name: C['name'];
+  useInvalidate: () => () => void;
 }
+& (C['actions'] extends { getList: true | object }
+    ? { useInvalidateList: () => () => void }
+    : {})
+& (C['actions'] extends { get: true | object }
+    ? { useInvalidateDetail: () => (id?: string | number) => void }
+    : {})
 & (C['actions'] extends { getList: true | object }
     ? { useList: ListHook<T, C> }
       & (SSREnabled<C> extends true
@@ -823,6 +833,26 @@ export const createResource = <T>() => <const C extends ResourceConfig<T>>(confi
     }
   }
 
+  // -- Invalidation hooks (always available on every resource) -----
+
+  const useInvalidate = () => {
+    const queryClient = useQueryClient();
+    return useCallback(() => invalidate(queryClient, config.name), [queryClient]);
+  };
+
+  const useInvalidateList = () => {
+    const queryClient = useQueryClient();
+    return useCallback(() => invalidateList(queryClient, config.name), [queryClient]);
+  };
+
+  const useInvalidateDetail = () => {
+    const queryClient = useQueryClient();
+    return useCallback(
+      (id?: string | number) => invalidateDetail(queryClient, config.name, id),
+      [queryClient],
+    );
+  };
+
   // -- Build the resource ------------------------------------------
 
   const actions = config.actions ?? {};
@@ -830,6 +860,9 @@ export const createResource = <T>() => <const C extends ResourceConfig<T>>(confi
 
   const resource = {
     name: config.name,
+    useInvalidate,
+    ...(actions.getList ? { useInvalidateList } : {}),
+    ...(actions.get ? { useInvalidateDetail } : {}),
     ...(actions.getList ? { useList } : {}),
     ...(actions.getList && ssrEnabled
       ? { listOptions, prefetchList, fetchList }

@@ -559,3 +559,53 @@ perCallResource.useList(undefined, { staleTime: 0 });
 perCallResource.useList({ q: 'x' }, { enabled: true, refetchInterval: 5000 });
 perCallResource.useGet(42, { staleTime: 60_000, retry: 1 });
 perCallResource.useSingle({ enabled: false });
+
+// -- Invalidation hooks (v0.1.2) -----------------------------------
+
+// useInvalidate is present on EVERY resource shape, regardless of actions.
+const invalFull: () => () => void = full.useInvalidate;
+const invalEmpty: () => () => void = empty.useInvalidate;
+const invalWithCustom: () => () => void = withCustom.useInvalidate;
+const invalNoCustom: () => () => void = noCustom.useInvalidate;
+const invalMulti: () => () => void = multi.useInvalidate;
+const invalStats: () => () => void = taskStats.useInvalidate;
+void [invalFull, invalEmpty, invalWithCustom, invalNoCustom, invalMulti, invalStats];
+
+// The returned invalidator takes no args and returns void.
+const _invalFn: () => void = full.useInvalidate();
+_invalFn();
+// @ts-expect-error - takes no arguments
+full.useInvalidate()('bogus');
+
+// useInvalidateList is present ONLY when getList is configured.
+const _invalListFull: () => () => void = full.useInvalidateList;
+const _invalListWithCustom: () => () => void = withCustom.useInvalidateList;
+// noCustom has getList too
+const _invalListNoCustom: () => () => void = noCustom.useInvalidateList;
+// @ts-expect-error - no getList action -> no useInvalidateList
+empty.useInvalidateList;
+// @ts-expect-error - no getList action -> no useInvalidateList
+multi.useInvalidateList;
+// @ts-expect-error - no getList action (only getSingle) -> no useInvalidateList
+taskStats.useInvalidateList;
+
+// useInvalidateDetail is present ONLY when get is configured.
+const _invalDetailFull: () => (id?: string | number) => void = full.useInvalidateDetail;
+// @ts-expect-error - no get action -> no useInvalidateDetail
+empty.useInvalidateDetail;
+// @ts-expect-error - no get action -> no useInvalidateDetail
+withCustom.useInvalidateDetail;
+// @ts-expect-error - no get action -> no useInvalidateDetail
+noCustom.useInvalidateDetail;
+// @ts-expect-error - no get action -> no useInvalidateDetail
+multi.useInvalidateDetail;
+// @ts-expect-error - getSingle is NOT get -> no useInvalidateDetail
+taskStats.useInvalidateDetail;
+
+// invalidateDetail takes an optional id, and only string | number.
+const _invalDetailFn: (id?: string | number) => void = full.useInvalidateDetail();
+_invalDetailFn();
+_invalDetailFn(42);
+_invalDetailFn('abc');
+// @ts-expect-error - id must be string | number, not object
+_invalDetailFn({ id: 1 });

@@ -112,6 +112,28 @@ describe('find (on useList() result)', () => {
     expect(result.current.find((t: Task) => t.done)).toBeUndefined();
   });
 
+  it('returns undefined rather than throwing when the cache holds a non-array value', async () => {
+    // A request that bypasses the API layer (e.g. an unhandled request
+    // falling through to an HTML fallback response) can leave a truthy
+    // non-array value in the cache. find() must degrade gracefully, not
+    // throw - a raw Array.prototype.find call on a non-array would throw
+    // "X.find is not a function".
+    const axios = makeMockAxios('<html>not json</html>');
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: { getList: true },
+    });
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => tasks.useList(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(Array.isArray(result.current.data)).toBe(false);
+    expect(() => result.current.find(1)).not.toThrow();
+    expect(result.current.find(1)).toBeUndefined();
+    expect(() => result.current.find((t: Task) => t.id === 1)).not.toThrow();
+    expect(result.current.find((t: Task) => t.id === 1)).toBeUndefined();
+  });
+
   it('accepts a predicate function, matching Array.prototype.find semantics', async () => {
     const list: Task[] = [
       { id: 1, title: 'A', done: false },

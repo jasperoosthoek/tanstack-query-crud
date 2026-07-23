@@ -1,6 +1,6 @@
 {
     "name": "@jasperoosthoek/tanstack-query-crud",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "author": "jasperoosthoek",
     "license": "MIT",
     "description": "Declarative TanStack Query CRUD library - config-driven typed hooks",

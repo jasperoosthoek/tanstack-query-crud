@@ -10,3 +10,6 @@
 
 ##### Version 0.1.3
 - The `useGetList` hook returns a `find` function to get an instance from the data
+
+##### Version 0.1.4
+- Fix calling `.find()` on list that's not an array

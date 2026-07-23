@@ -416,7 +416,12 @@ export const createResource = <T>() => <const C extends ResourceConfig<T>>(confi
     list: T[] | undefined,
     idOrPredicate: string | number | ((item: T, index: number, list: T[]) => boolean),
   ): T | undefined => {
-    if (!list) return undefined;
+    // Array.isArray, not just truthy: a cache entry can end up holding
+    // something other than T[] if a request bypasses the mock/API layer
+    // (e.g. a stale service worker letting a request fall through to a
+    // non-JSON response). Degrade to "not found" rather than crash the
+    // caller's render.
+    if (!Array.isArray(list)) return undefined;
     if (typeof idOrPredicate === 'function') return list.find(idOrPredicate);
     // String-coerce rather than strict === - callers routinely pass an id
     // sourced from a route param (always a string) against an entity whose

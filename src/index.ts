@@ -1,7 +1,9 @@
 export { createResource } from './createResource';
 export type {
   DetailQueryOptions,
+  FindHelper,
   ListQueryOptions,
+  ListResult,
   PaginatedListResult,
   Resource,
   SingleQueryOptions,

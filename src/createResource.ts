@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useQuery,
   useMutation,
@@ -48,11 +48,29 @@ type ErasedMutationPrepare   = MutationPrepare<any>;
 
 // -- Hook signature types ------------------------------------------
 
+// find: lookup by the resource's configured id field, or by predicate -
+// bound to a specific useList() call's own data via closure (see useList
+// below), not to the static resource. That means: no extra useQuery
+// subscription (reuses the .data the caller already fetched), and it's
+// correct in the presence of multiple simultaneous cache entries for the
+// same resource (e.g. useList() vs useList({ status: 'open' }) - each
+// call's find only ever searches its own list, never a sibling filter's).
+// It's a plain function by the time you have it, not a hook itself, so
+// it's safe to call from non-component contexts like a DataTable column's
+// `selector` callback where hooks aren't legal.
+export type FindHelper<T> = {
+  (id: string | number): T | undefined;
+  (predicate: (item: T, index: number, list: T[]) => boolean): T | undefined;
+};
+
 // useList's shape depends on whether pagination is configured.
 export type PaginatedListResult<T> = Omit<UseQueryResult<T[], Error>, 'data'> & {
   data: T[] | undefined;
   pagination: Pagination | undefined;
+  find: FindHelper<T>;
 };
+
+export type ListResult<T> = UseQueryResult<T[], Error> & { find: FindHelper<T> };
 
 // Filter type inference: the parameter type of getList.prepareParams
 // is the source of truth. Falls back to Record<string, any> without one.
@@ -70,7 +88,7 @@ type ListParams<C> = HasPagination<C> extends true
 
 type ListHook<T, C> = HasPagination<C> extends true
   ? (params?: ListParams<C>, tqOptions?: QueryTQOptions<T[]>) => PaginatedListResult<T>
-  : (params?: ListParams<C>, tqOptions?: QueryTQOptions<T[]>) => UseQueryResult<T[], Error>;
+  : (params?: ListParams<C>, tqOptions?: QueryTQOptions<T[]>) => ListResult<T>;
 
 type GetHook<T>      = (id: string | number, tqOptions?: QueryTQOptions<T>) => UseQueryResult<T, Error>;
 type SingleHook<T>   = (tqOptions?: QueryTQOptions<T>) => UseQueryResult<T, Error>;
@@ -130,6 +148,7 @@ export type UsePaginatedListOptions = {
 export type UsePaginatedListResult<T> = Omit<UseQueryResult<T[], Error>, 'data'> & {
   data: T[] | undefined;
   pagination: Pagination;
+  find: FindHelper<T>;
   offset: number;
   limit: number;
   next: () => void;
@@ -390,6 +409,22 @@ export const createResource = <T>() => <const C extends ResourceConfig<T>>(confi
     : createAxiosCaller(config.axios!);
 
   const extractId = makeExtractId(config.id ?? 'id');
+
+  // Internal: bound into a FindHelper closed over one useList() call's own
+  // `data` below - not part of the public surface itself.
+  const findInList = (
+    list: T[] | undefined,
+    idOrPredicate: string | number | ((item: T, index: number, list: T[]) => boolean),
+  ): T | undefined => {
+    if (!list) return undefined;
+    if (typeof idOrPredicate === 'function') return list.find(idOrPredicate);
+    // String-coerce rather than strict === - callers routinely pass an id
+    // sourced from a route param (always a string) against an entity whose
+    // id field is numeric; extractId deliberately preserves the original
+    // primitive type, so the two sides won't match under strict equality.
+    return list.find((item) => String(extractId(item)) === String(idOrPredicate));
+  };
+
   const getListActionConfig = config.actions?.getList;
   const pagConfig = getListPagination(getListActionConfig);
   const isPaginated = !!pagConfig;
@@ -465,7 +500,12 @@ export const createResource = <T>() => <const C extends ResourceConfig<T>>(confi
 
     // No pagination: raw data IS the array (or undefined)
     if (!pagConfig) {
-      return raw as UseQueryResult<T[], Error>;
+      const list = raw.data as T[] | undefined;
+      const find: FindHelper<T> = useMemo(
+        () => ((idOrPredicate: any) => findInList(list, idOrPredicate)) as FindHelper<T>,
+        [list],
+      );
+      return { ...raw, find } as ListResult<T>;
     }
 
     // With pagination: derive data + pagination from raw response
@@ -481,7 +521,12 @@ export const createResource = <T>() => <const C extends ResourceConfig<T>>(confi
         }
       : undefined;
 
-    return { ...raw, data, pagination };
+    const find: FindHelper<T> = useMemo(
+      () => ((idOrPredicate: any) => findInList(data, idOrPredicate)) as FindHelper<T>,
+      [data],
+    );
+
+    return { ...raw, data, pagination, find };
   };
 
   // -- usePaginatedList helper -------------------------------------

@@ -302,6 +302,69 @@ describe('explicit invalidates skips response-driven', () => {
     expect(listHook.result.current.data).toEqual(initial);
     expect(invalidateSpy).not.toHaveBeenCalled();
   });
+
+  it('update: invalidates: ["list"] uses invalidation, skips response-driven', async () => {
+    const initial: Task[] = [{ id: 1, title: 'A', done: false }];
+    const updated: Task = { id: 1, title: 'A-updated', done: true };
+
+    const axios = makeMockAxios((c) => {
+      if (c.method === 'get') return initial;
+      return updated;
+    });
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        getList: true,
+        update: { invalidates: ['list'] },
+      },
+    });
+
+    const { wrapper, invalidateSpy } = makeWrapper();
+    const listHook = renderHook(() => tasks.useList(), { wrapper });
+    await waitFor(() => expect(listHook.result.current.isSuccess).toBe(true));
+
+    const updateHook = renderHook(() => tasks.useUpdate(), { wrapper });
+    await act(async () => {
+      await updateHook.result.current.mutateAsync({ id: 1, title: 'A-updated', done: true });
+    });
+    await waitFor(() => expect(updateHook.result.current.isSuccess).toBe(true));
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks', 'list'] });
+    // No local splice - the list is unchanged until invalidation refetches
+    expect(listHook.result.current.data).toEqual(initial);
+  });
+
+  it('delete: invalidates: ["list"] uses invalidation, skips response-driven', async () => {
+    const initial: Task[] = [{ id: 1, title: 'A', done: false }];
+
+    const axios = makeMockAxios((c) => {
+      if (c.method === 'get') return initial;
+      return undefined;
+    });
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        getList: true,
+        delete: { invalidates: ['list'] },
+      },
+    });
+
+    const { wrapper, invalidateSpy } = makeWrapper();
+    const listHook = renderHook(() => tasks.useList(), { wrapper });
+    await waitFor(() => expect(listHook.result.current.isSuccess).toBe(true));
+
+    const deleteHook = renderHook(() => tasks.useDelete(), { wrapper });
+    await act(async () => {
+      await deleteHook.result.current.mutateAsync({ id: 1 });
+    });
+    await waitFor(() => expect(deleteHook.result.current.isSuccess).toBe(true));
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks', 'list'] });
+    // No local removal - the list is unchanged until invalidation refetches
+    expect(listHook.result.current.data).toEqual(initial);
+  });
 });
 
 // -- Cross-resource additive with response-driven -----------------
@@ -351,6 +414,96 @@ describe('cross-resource invalidation is additive with response-driven', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks'] });
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks', 'list'] });
   });
+
+  it('update: resource reference invalidates other resource + keeps response-driven local update', async () => {
+    const initial: Task[] = [{ id: 1, title: 'A', done: false }];
+    const updated: Task = { id: 1, title: 'A-updated', done: true };
+
+    const axios = makeMockAxios((c) => {
+      if (c.method === 'get' && c.url === '/tasks') return initial;
+      if (c.method === 'get' && c.url === '/tasks/stats') return { open: 3, closed: 1 };
+      return updated;
+    });
+
+    const taskStats = createResource<Stats>()({
+      name: 'taskStats', route: '/tasks/stats', axios,
+      actions: { getSingle: true },
+    });
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        getList: true,
+        update: { invalidates: [taskStats] },  // cross-resource only
+      },
+    });
+
+    const { wrapper, invalidateSpy } = makeWrapper();
+    const both = renderHook(
+      () => ({ list: tasks.useList(), upd: tasks.useUpdate() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(both.result.current.list.isSuccess).toBe(true));
+
+    await act(async () => {
+      await both.result.current.upd.mutateAsync({ id: 1, title: 'A-updated', done: true });
+    });
+    await waitFor(() => expect(both.result.current.upd.isSuccess).toBe(true));
+
+    // Local splice happened (response-driven)
+    expect(both.result.current.list.data).toEqual([updated]);
+    // taskStats was invalidated (cross-resource)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['taskStats'] });
+    // But this resource's queries were NOT invalidated
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks'] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks', 'list'] });
+  });
+
+  it('delete: resource reference invalidates other resource + keeps response-driven local removal', async () => {
+    const initial: Task[] = [
+      { id: 1, title: 'A', done: false },
+      { id: 2, title: 'B', done: false },
+    ];
+
+    const axios = makeMockAxios((c) => {
+      if (c.method === 'get' && c.url === '/tasks') return initial;
+      if (c.method === 'get' && c.url === '/tasks/stats') return { open: 3, closed: 1 };
+      return undefined;
+    });
+
+    const taskStats = createResource<Stats>()({
+      name: 'taskStats', route: '/tasks/stats', axios,
+      actions: { getSingle: true },
+    });
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        getList: true,
+        delete: { invalidates: [taskStats] },  // cross-resource only
+      },
+    });
+
+    const { wrapper, invalidateSpy } = makeWrapper();
+    const both = renderHook(
+      () => ({ list: tasks.useList(), del: tasks.useDelete() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(both.result.current.list.isSuccess).toBe(true));
+
+    await act(async () => {
+      await both.result.current.del.mutateAsync({ id: 1 });
+    });
+    await waitFor(() => expect(both.result.current.del.isSuccess).toBe(true));
+
+    // Local removal happened (response-driven)
+    expect(both.result.current.list.data).toEqual([initial[1]]);
+    // taskStats was invalidated (cross-resource)
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['taskStats'] });
+    // But this resource's queries were NOT invalidated
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks'] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks', 'list'] });
+  });
 });
 
 // -- Paginated resources fall back to invalidation ----------------
@@ -393,6 +546,85 @@ describe('paginated resource falls back to invalidation', () => {
     await waitFor(() => expect(createHook.result.current.isSuccess).toBe(true));
 
     // Paginated: invalidation ran
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] });
+  });
+
+  it('update on a paginated resource still triggers invalidation', async () => {
+    type DjangoPage<T> = { count: number; results: T[] };
+
+    const initial: DjangoPage<Task> = {
+      count: 1,
+      results: [{ id: 1, title: 'A', done: false }],
+    };
+    const updated: Task = { id: 1, title: 'A-updated', done: true };
+
+    const axios = makeMockAxios((c) => {
+      if (c.method === 'get') return initial;
+      return updated;
+    });
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        getList: {
+          pagination: {
+            defaultLimit: 20,
+            extractItems: (r: DjangoPage<Task>) => r.results,
+            extractMeta: (r: DjangoPage<Task>) => ({ count: r.count }),
+          },
+        },
+        update: true,
+      },
+    });
+
+    const { wrapper, invalidateSpy } = makeWrapper();
+
+    const updateHook = renderHook(() => tasks.useUpdate(), { wrapper });
+    await act(async () => {
+      await updateHook.result.current.mutateAsync({ id: 1, title: 'A-updated', done: true });
+    });
+    await waitFor(() => expect(updateHook.result.current.isSuccess).toBe(true));
+
+    // Paginated: can't safely splice a fixed-offset page, so invalidation ran instead
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] });
+  });
+
+  it('delete on a paginated resource still triggers invalidation', async () => {
+    type DjangoPage<T> = { count: number; results: T[] };
+
+    const initial: DjangoPage<Task> = {
+      count: 1,
+      results: [{ id: 1, title: 'A', done: false }],
+    };
+
+    const axios = makeMockAxios((c) => {
+      if (c.method === 'get') return initial;
+      return undefined;
+    });
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        getList: {
+          pagination: {
+            defaultLimit: 20,
+            extractItems: (r: DjangoPage<Task>) => r.results,
+            extractMeta: (r: DjangoPage<Task>) => ({ count: r.count }),
+          },
+        },
+        delete: true,
+      },
+    });
+
+    const { wrapper, invalidateSpy } = makeWrapper();
+
+    const deleteHook = renderHook(() => tasks.useDelete(), { wrapper });
+    await act(async () => {
+      await deleteHook.result.current.mutateAsync({ id: 1 });
+    });
+    await waitFor(() => expect(deleteHook.result.current.isSuccess).toBe(true));
+
+    // Paginated: can't safely splice a fixed-offset page, so invalidation ran instead
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] });
   });
 });

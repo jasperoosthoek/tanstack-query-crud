@@ -87,6 +87,27 @@ describe('id extraction', () => {
     expect(allDetailKeys).toEqual([]);
   });
 
+  it('coerces a non-primitive id (bigint) to a string for the cache key', async () => {
+    // extractId's fast path only returns the value as-is for typeof
+    // 'string' | 'number'; anything else (bigint, boolean, object) falls
+    // through to String(v). bigint is a clean, unambiguous case of that.
+    type BigTask = { id: bigint; title: string };
+    const created: BigTask = { id: 10n, title: 'X' };
+    const axios = makeAxios(() => created);
+
+    const items = createResource<BigTask>()({
+      name: 'items', route: '/items', axios,
+      actions: { create: true },
+    });
+
+    const { queryClient, wrapper } = makeWrapper();
+    const { result } = renderHook(() => items.useCreate(), { wrapper });
+    await act(async () => { await result.current.mutateAsync({ title: 'X' }); });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(queryClient.getQueryData(['items', 'detail', '10'])).toEqual(created);
+  });
+
   it('update matches items in list by id even with different reference identity', async () => {
     // Verify extractId is used for the comparison, not reference equality
     type Task = { id: number; title: string; done: boolean };

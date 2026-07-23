@@ -138,6 +138,29 @@ describe('explicit same-resource invalidation', () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] });
   });
+
+  it('invalidates: ["all"] (array form) invalidates the whole resource', async () => {
+    // Distinct from the bare `invalidates: 'all'` case above - here 'all'
+    // is a string *element inside the array*, exercising the same-resource
+    // branch of invalidateTarget rather than the top-level shortcut.
+    const axios = makeMockAxios(() => ({ id: 1, title: 'X', done: false }));
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        create: { invalidates: ['all'] },
+      },
+    });
+
+    const { wrapper, invalidateSpy } = makeWrapper();
+
+    const createHook = renderHook(() => tasks.useCreate(), { wrapper });
+    await act(async () => {
+      await createHook.result.current.mutateAsync({ title: 'X', done: false });
+    });
+    await waitFor(() => expect(createHook.result.current.isSuccess).toBe(true));
+
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['tasks'] });
+  });
 });
 
 // -- Cross-resource invalidation via resource references ----------
@@ -197,6 +220,35 @@ describe('cross-resource invalidation', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['taskStats', 'single'] });
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks', 'list'] });
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks'] });
+  });
+
+  it('tuple [resource, "all"] invalidates all queries of the other resource', async () => {
+    const axios = makeMockAxios(() => ({ id: 1, title: 'A', done: false }));
+
+    const taskStats = createResource<Stats>()({
+      name: 'taskStats', route: '/tasks/stats', axios,
+      actions: { getSingle: true },
+    });
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        update: { invalidates: [[taskStats, 'all']] },
+      },
+    });
+
+    const { wrapper, invalidateSpy } = makeWrapper();
+
+    const updateHook = renderHook(() => tasks.useUpdate(), { wrapper });
+    await act(async () => {
+      await updateHook.result.current.mutateAsync({ id: 1, title: 'X' });
+    });
+    await waitFor(() => expect(updateHook.result.current.isSuccess).toBe(true));
+
+    // Tuple with 'all' kind invalidates the same key as a bare resource reference
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['taskStats'] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['taskStats', 'single'] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['tasks', 'list'] });
   });
 });
 

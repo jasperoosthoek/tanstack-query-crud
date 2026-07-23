@@ -1,6 +1,7 @@
 import type { AxiosInstance } from 'axios';
 import type { UseQueryResult, UseMutationResult } from '@tanstack/react-query';
 import { createResource } from '../src';
+import type { FindHelper } from '../src';
 
 type Task = { id: number; title: string; done: boolean };
 
@@ -357,6 +358,10 @@ const _hp: boolean = paginatedResult.hasPrev;
 const _off: number = paginatedResult.offset;
 const _lim: number = paginatedResult.limit;
 
+// find flows through usePaginatedList too (composed on top of useList)
+const _paginatedFind: FindHelper<Task> = paginatedResult.find;
+void _paginatedFind;
+
 // Filters accepted
 paginated.usePaginatedList({ filters: { status: 'open' } });
 paginated.usePaginatedList({ initialOffset: 40, initialLimit: 10 });
@@ -588,6 +593,33 @@ empty.useInvalidateList;
 multi.useInvalidateList;
 // @ts-expect-error - no getList action (only getSingle) -> no useInvalidateList
 taskStats.useInvalidateList;
+
+// find is exposed on useList()'s own return value, not on the resource
+// directly - it's bound via closure to that specific call's own data.
+// Gating follows useList's gating for free: no getList -> no useList ->
+// nothing to call .find on. (empty/multi/taskStats already @ts-expect-error
+// on .useList itself elsewhere in this file.)
+const _findFull: FindHelper<Task> = full.useList().find;
+const _findWithCustom: FindHelper<Task> = withCustom.useList().find;
+const _findNoCustom: FindHelper<Task> = noCustom.useList().find;
+void [_findFull, _findWithCustom, _findNoCustom];
+
+// find(id) - by the resource's configured id field
+const _foundById: Task | undefined = full.useList().find(1);
+const _foundByStringId: Task | undefined = full.useList().find('1');
+void [_foundById, _foundByStringId];
+
+// find(predicate) - matches Array.prototype.find's (item, index, list) shape
+const _foundByPredicate: Task | undefined = full.useList().find((t, i, list) => {
+  const _idx: number = i;
+  const _l: Task[] = list;
+  void [_idx, _l];
+  return t.done;
+});
+void _foundByPredicate;
+
+// @ts-expect-error - argument must be string | number | predicate, not an object
+full.useList().find({ id: 1 });
 
 // useInvalidateDetail is present ONLY when get is configured.
 const _invalDetailFull: () => (id?: string | number) => void = full.useInvalidateDetail;

@@ -70,6 +70,38 @@ describe('useResourceUtils', () => {
     expect(queryClient.getQueryData(['tasks', 'list', {}])).toBeUndefined();
   });
 
+  it('setListCache / getListCache round-trip', () => {
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useResourceUtils<Task>(tasks), { wrapper });
+
+    const items: Task[] = [{ id: 1, title: 'A', done: false }];
+    act(() => {
+      result.current.setListCache(items);
+    });
+
+    expect(result.current.getListCache()).toEqual(items);
+  });
+
+  it('getListCache with params reads back a specific variant, not the default', () => {
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useResourceUtils<Task>(tasks), { wrapper });
+
+    const items: Task[] = [{ id: 1, title: 'A', done: false }];
+    act(() => {
+      result.current.setListCache(items, { status: 'open' });
+    });
+
+    expect(result.current.getListCache({ status: 'open' })).toEqual(items);
+    expect(result.current.getListCache()).toBeUndefined();
+  });
+
+  it('getListCache returns undefined when nothing has been cached', () => {
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useResourceUtils<Task>(tasks), { wrapper });
+
+    expect(result.current.getListCache()).toBeUndefined();
+  });
+
   it('setDetailCache / getDetailCache round-trip', () => {
     const { wrapper } = makeWrapper();
     const { result } = renderHook(() => useResourceUtils<Task>(tasks), { wrapper });
@@ -116,6 +148,43 @@ describe('useResourceUtils', () => {
       .toEqual([{ id: 1, title: 'A', done: true }]);
     expect(queryClient.getQueryData(['tasks', 'list', { status: 'closed' }]))
       .toEqual([{ id: 2, title: 'B', done: true }]);
+  });
+
+  it('updateAllDetails applies functional update across all detail cache entries', () => {
+    const { queryClient, wrapper } = makeWrapper();
+    const { result } = renderHook(() => useResourceUtils<Task>(tasks), { wrapper });
+
+    // Seed multiple detail cache entries
+    act(() => {
+      result.current.setDetailCache(1, { id: 1, title: 'A', done: false });
+      result.current.setDetailCache(2, { id: 2, title: 'B', done: false });
+    });
+
+    act(() => {
+      result.current.updateAllDetails((item) => ({ ...item, done: true }));
+    });
+
+    expect(queryClient.getQueryData(['tasks', 'detail', 1]))
+      .toEqual({ id: 1, title: 'A', done: true });
+    expect(queryClient.getQueryData(['tasks', 'detail', 2]))
+      .toEqual({ id: 2, title: 'B', done: true });
+  });
+
+  it('updateAllDetails leaves other resources\' detail caches untouched', () => {
+    const { queryClient, wrapper } = makeWrapper();
+    const { result } = renderHook(() => useResourceUtils<Task>(tasks), { wrapper });
+
+    // A detail cache entry under a different resource name
+    queryClient.setQueryData(['otherResource', 'detail', 1], { id: 1, name: 'untouched' });
+    act(() => {
+      result.current.setDetailCache(1, { id: 1, title: 'A', done: false });
+    });
+
+    act(() => {
+      result.current.updateAllDetails((item) => ({ ...item, done: true }));
+    });
+
+    expect(queryClient.getQueryData(['otherResource', 'detail', 1])).toEqual({ id: 1, name: 'untouched' });
   });
 
   it('invalidateList marks list queries stale', () => {

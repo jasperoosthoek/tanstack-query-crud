@@ -250,6 +250,32 @@ describe('mutation callbacks - useUpdate and useDelete', () => {
 
     expect(onSuccess).toHaveBeenCalledWith(undefined, { id: 1 }, undefined, expect.any(Object));
   });
+
+  it('useDelete fires onError with (error, variables, context) on failure', async () => {
+    const err = new Error('boom');
+    const axios = makeFailingAxios(err);
+    const onError = jest.fn();
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      actions: {
+        delete: {
+          onMutate: () => ({ tag: 'ctx' }),
+          onError,
+        },
+      },
+    });
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => tasks.useDelete(), { wrapper });
+
+    const input = { id: 1 };
+    await act(async () => {
+      await result.current.mutateAsync(input).catch(() => {});
+    });
+
+    expect(onError).toHaveBeenCalledWith(err, input, { tag: 'ctx' }, expect.any(Object));
+  });
 });
 
 // -- Per-call callbacks (TQ-native) --------------------------------
@@ -391,6 +417,32 @@ describe('resource-level onError', () => {
 
     expect(resourceOnError).toHaveBeenCalledWith(err, {
       action: 'update',
+      variables: { id: 1 },
+    });
+    expect(actionOnError).toHaveBeenCalledWith(err, { id: 1 }, undefined, expect.any(Object));
+  });
+
+  it('composes with action-level onError on useDelete - both fire', async () => {
+    const err = new Error('boom');
+    const axios = makeFailingAxios(err);
+    const resourceOnError = jest.fn();
+    const actionOnError = jest.fn();
+
+    const tasks = createResource<Task>()({
+      name: 'tasks', route: '/tasks', axios,
+      onError: resourceOnError,
+      actions: { delete: { onError: actionOnError } },
+    });
+
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => tasks.useDelete(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ id: 1 }).catch(() => {});
+    });
+
+    expect(resourceOnError).toHaveBeenCalledWith(err, {
+      action: 'delete',
       variables: { id: 1 },
     });
     expect(actionOnError).toHaveBeenCalledWith(err, { id: 1 }, undefined, expect.any(Object));
